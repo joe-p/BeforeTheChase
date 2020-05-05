@@ -18,66 +18,110 @@ namespace BeforeTheChase
             Tick += OnTick;
         }
 
-
         public void OnTick(object sender, EventArgs e)
         {
             Player player = Game.Player;
-            Vector3 plrPos3 = player.Character.Position;
-            Vector2 plrPos2 = new Vector2(plrPos3.X, plrPos3.Y);
 
-            float plrMph = player.Character.CurrentVehicle.Speed * (float)2.237;
-
-            float speedingBy = OverSpeedLimit(plrPos2, plrMph);
-
-            if (player.WantedLevel == 0 && player.Character.IsInVehicle() && speedingBy > 10)
+            if (player.WantedLevel == 0 && player.Character.IsInVehicle())
             {
+
+                Vector3 plrPos3 = player.Character.Position;
+                Vector2 plrPos2 = new Vector2(plrPos3.X, plrPos3.Y);
+
+                float plrMph = player.Character.CurrentVehicle.Speed * (float)2.237;
+
+                float speedingBy = OverSpeedLimit(plrPos2, plrMph);
                 Ped[] loadedPeds = World.GetAllPeds();
                 int numPeds = loadedPeds.Length;
                 Ped plrPed = player.Character;
+                
 
-                foreach (Ped p in loadedPeds)
+                int seen = PedCanSeePlayersVehicle(loadedPeds, player);
+
+                if (seen > 0)
                 {
-                    Yield();
 
-                    int pType = Function.Call<int>(Hash.GET_PED_TYPE, p.Handle);
-                    bool pCanSee = Function.Call<bool>
-                        (
-                        Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY,
-                        p.Handle,
-                        plrPed.CurrentVehicle.Handle
-                        );
+                    Random rand = new Random();
 
-
-                    if (pCanSee)
+                    if (player.WantedLevel == 0 && speedingBy > 10)
                     {
-                        Random rand = new Random();
-                        double randNum = rand.NextDouble();
+                        int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
 
-                        bool inFront = Function.Call<bool>
-                       (
-                       Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY_IN_FRONT,
-                       p.Handle,
-                       plrPed.CurrentVehicle.Handle
-                       );
-
-                        if (inFront)
+                        if (seen == 2)
                         {
-                            randNum = randNum / 2;
-                        }
+                            UI.Notify("Cop saw you going " + speedingBy + " over the speed limit");
+                            player.WantedLevel = 1;
+                            // TO-DO: See if there's a REPORT_CRIME param for cop reporting (not a "citizens report")
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 4, wantedThresh);
 
-                        if (randNum / speedingBy < .0001)
+                        }
+                        else if (rand.NextDouble() / speedingBy < .01)
                         {
                             UI.Notify("Reported going " + speedingBy + " over the speed limit");
-                            player.WantedLevel = 1;
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 4, wantedThresh);
                         }
 
+                    }
 
-                        break;
+                    if (player.WantedLevel == 0 && DrivingOnWrongSide())
+                    {
+                        int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
 
+                        if (seen == 2)
+                        {
+                            UI.Notify("Cop saw you driving on the wrong side of the road");
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 3, wantedThresh); // Reckless driving
+                        }
+                        else if (rand.NextDouble() < .05)
+                        {
+                            UI.Notify("Ped reported you driving on the wrong side of the road");
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 3, wantedThresh); // Reckless driving
+                        }
                     }
                 }
             }
 
+        }
+
+        public bool DrivingOnWrongSide()
+        {
+            int time = Function.Call<int>(Hash.GET_TIME_SINCE_PLAYER_DROVE_AGAINST_TRAFFIC, Game.Player.Handle);
+
+            if (time < 1000)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+
+        }
+
+        public int PedCanSeePlayersVehicle(Ped[] peds, Player player)
+        {
+            int returnVal = 0;
+            foreach (Ped p in peds)
+            {
+                Yield();
+
+                int pType = Function.Call<int>(Hash.GET_PED_TYPE, p.Handle);
+                bool pCanSee = Function.Call<bool>
+                    (
+                    Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY,
+                    p.Handle,
+                    player.Character.CurrentVehicle.Handle
+                    );
+
+                if (pCanSee)
+                {
+                    returnVal = 1;
+                }
+
+
+            }
+
+            return returnVal;
         }
 
         public float OverSpeedLimit(Vector2 pedPosition, float speed)
@@ -329,6 +373,7 @@ namespace BeforeTheChase
             return speed - speedLimit;
 
         }
-
     }
 }
+
+
