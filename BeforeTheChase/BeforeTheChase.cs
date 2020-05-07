@@ -61,10 +61,9 @@ namespace BeforeTheChase
 
                     List<Ped> sawList = new List<Ped>(); // list of all the peds that saw the player
 
-                    //CONFIG TODO: chance of being seen
                     foreach (Ped p in losList)
                     {
-                        if (rand.NextDouble() < .1) // 10% chance a ped without front LOS sees player vehicle
+                        if (rand.NextDouble() < .1) // 10% chance a ped without front LOS sees player vehicle (TODO CONF)
                         {
                             sawList.Add(p);
                         }
@@ -72,85 +71,63 @@ namespace BeforeTheChase
 
                     foreach (Ped p in losFrontList)
                     {
-                        if (rand.NextDouble() < .9) // 90% chance a ped with front LOS sees player vehicle
+                        if (rand.NextDouble() < .9) // 90% chance a ped with front LOS sees player vehicle (TODO CONF)
                         {
                             sawList.Add(p);
                         }
                     }
 
-                    UI.Notify(sawList.Count().ToString() + " / " + pedList.Count());
+                    int sawCount = sawList.Count();
+
+                    UI.Notify(sawCount.ToString() + " / " + pedList.Count());
                     pedList = new List<Ped>();
+
+                    Vector3 plrPos3 = player.Character.Position;
+                    Vector2 plrPos2 = new Vector2(plrPos3.X, plrPos3.Y);
+
+                    float plrMph = player.Character.CurrentVehicle.Speed * (float)2.237;
+
+                    float speedingBy = OverSpeedLimit(plrPos2, plrMph);
+
+                    if (player.WantedLevel == 0 && speedingBy > 10)
+                    {
+
+                        double chanceOfBeingReported = 1 - Math.Pow(.99, sawCount); // Each ped has a 1% chance of reporting the player for speeding (TODO CONF)
+
+                        if (rand.NextDouble() < chanceOfBeingReported)
+                        {
+                            int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
+                            UI.Notify("Ped reported you going " + speedingBy + " over the speed limit");
+
+                            // TO-DO: See if there's a REPORT_CRIME param for cop reporting (not a "citizens report")
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 4, wantedThresh); // Speeding
+                        }
+
+                    }
+
+                    if (player.WantedLevel == 0 && DrivingOnWrongSide())
+                    {
+                        int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
+
+                        double chanceOfBeingReported = 1 - Math.Pow(.90, sawCount); // Each ped has a 10% chance of reporting the player for reckless driving (TODO OONF)
+
+                        if (rand.NextDouble() < chanceOfBeingReported)
+                        {
+                            UI.Notify("Ped reported you for reckless driving");
+                            Function.Call(Hash.REPORT_CRIME, player.Handle, 3, wantedThresh); // Reckless driving
+                        }
+
+                    }
+
                 }
             }
         }
-        /*
-        if (player.WantedLevel == 0 && player.Character.IsInVehicle())
-        {
-
-            Vector3 plrPos3 = player.Character.Position;
-            Vector2 plrPos2 = new Vector2(plrPos3.X, plrPos3.Y);
-
-            float plrMph = player.Character.CurrentVehicle.Speed * (float)2.237;
-
-            float speedingBy = OverSpeedLimit(plrPos2, plrMph);
-            Ped[] loadedPeds = World.GetAllPeds();
-            int numPeds = loadedPeds.Length;
-            Ped plrPed = player.Character;
-
-
-            int seen = PedCanSeePlayersVehicle(loadedPeds, player);
-
-            if (seen > 0)
-            {
-
-                Random rand = new Random();
-
-                if (player.WantedLevel == 0 && speedingBy > 10)
-                {
-                    int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
-
-                    if (seen == 2)
-                    {
-                        UI.Notify("Cop saw you going " + speedingBy + " over the speed limit");
-                        player.WantedLevel = 1;
-                        // TO-DO: See if there's a REPORT_CRIME param for cop reporting (not a "citizens report")
-                        Function.Call(Hash.REPORT_CRIME, player.Handle, 4, wantedThresh);
-
-                    }
-                    else if (rand.NextDouble() / speedingBy < .01)
-                    {
-                        UI.Notify("Reported going " + speedingBy + " over the speed limit");
-                        Function.Call(Hash.REPORT_CRIME, player.Handle, 4, wantedThresh);
-                    }
-
-                }
-
-                if (player.WantedLevel == 0 && DrivingOnWrongSide())
-                {
-                    int wantedThresh = Function.Call<int>(Hash.GET_WANTED_LEVEL_THRESHOLD, 1);
-
-                    if (seen == 2)
-                    {
-                        UI.Notify("Cop saw you driving on the wrong side of the road");
-                        Function.Call(Hash.REPORT_CRIME, player.Handle, 3, wantedThresh); // Reckless driving
-                    }
-                    else if (rand.NextDouble() < .05)
-                    {
-                        UI.Notify("Ped reported you driving on the wrong side of the road");
-                        Function.Call(Hash.REPORT_CRIME, player.Handle, 3, wantedThresh); // Reckless driving
-                    }
-                }
-            }
-        }
-
-    }
-    */
 
         public bool DrivingOnWrongSide()
         {
             int time = Function.Call<int>(Hash.GET_TIME_SINCE_PLAYER_DROVE_AGAINST_TRAFFIC, Game.Player.Handle);
 
-            if (time < 1000)
+            if (time < 1000) //TO DO: Figure out what value to use for this, maybe make it configurable
             {
                 return true;
             }
@@ -159,32 +136,6 @@ namespace BeforeTheChase
                 return false;
             }
 
-        }
-
-        public int PedCanSeePlayersVehicle(Ped[] peds, Player player)
-        {
-            int returnVal = 0;
-            foreach (Ped p in peds)
-            {
-                Yield();
-
-                int pType = Function.Call<int>(Hash.GET_PED_TYPE, p.Handle);
-                bool pCanSee = Function.Call<bool>
-                    (
-                    Hash.HAS_ENTITY_CLEAR_LOS_TO_ENTITY,
-                    p.Handle,
-                    player.Character.CurrentVehicle.Handle
-                    );
-
-                if (pCanSee)
-                {
-                    returnVal = 1;
-                }
-
-
-            }
-
-            return returnVal;
         }
 
         public float OverSpeedLimit(Vector2 pedPosition, float speed)
